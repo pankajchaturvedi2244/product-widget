@@ -27,19 +27,41 @@
     });
   }
 
+  function getBaseUrl() {
+    // Try to detect the current script dynamically
+    let currentScript = document.currentScript;
+
+    // Fallback (important for some browsers / bundlers)
+    if (!currentScript) {
+      const scripts = document.getElementsByTagName("script");
+      currentScript = scripts[scripts.length - 1];
+    }
+
+    const scriptUrl = new URL(currentScript.src);
+    return scriptUrl.origin;
+  }
+
   async function initialize() {
-    if (isLoaded) return;
+    if (isLoaded) return true;
+
     getContainer();
-    await loadScript("widget.js");
-    isLoaded = true;
-    return true;
+
+    try {
+      const baseUrl = getBaseUrl();
+      await loadScript(`${baseUrl}/widget.js`);
+      isLoaded = true;
+      return true;
+    } catch (error) {
+      console.error("MarketplaceWidget failed to load widget.js", error);
+      return false;
+    }
   }
 
   window.addEventListener("message", (event) => {
     if (event.origin !== window.location.origin) return;
-    if (event.data.type === "MARKETPLACE_WIDGET_API_KEY") {
+    if (event.data?.type === "MARKETPLACE_WIDGET_API_KEY") {
       window.__MARKETPLACE_WIDGET_API_KEY__ = event.data.payload;
-      event.source.postMessage({ type: "API_KEY_ACK" }, event.origin);
+      event.source?.postMessage({ type: "API_KEY_ACK" }, event.origin);
     }
   });
 
