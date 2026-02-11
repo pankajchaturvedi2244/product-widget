@@ -1,8 +1,7 @@
 // src/App.jsx
-import React, { useEffect, useCallback } from "react";
+import React, { useEffect, useCallback, useState } from "react";
 import {
   createStore,
-  
   actions,
   selectors,
   useStore,
@@ -14,18 +13,24 @@ import {
 } from "./services/api.js";
 import { cacheableApiCall } from "./services/cache.js";
 import { exponentialBackoff, CircuitBreaker } from "./utils/resilience.js";
+
 import {
   SearchBar,
-  ErrorBoundary,
+  
   ComparisonGrid,
-  LoadingSpinner,
-  ControlsBar,
+  
 } from "./components/index.jsx";
+import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
+
 import { ProductCard } from "./components/ProductCard.jsx";
+
 import "./styles/app.css";
-import { MAX_QUERY_LENGTH , MAX_PRICE_LIMIT} from "./configs/appConfig.js";
+import { MAX_QUERY_LENGTH, MAX_PRICE_LIMIT } from "./configs/appConfig.js";
+import { ControlsBar } from "./components/ControlsBar.jsx";
 
-
+/* ============================
+   Constants
+============================ */
 
 const ERROR_MESSAGES = {
   INVALID_QUERY: "Invalid search query",
@@ -42,12 +47,16 @@ const UI_TEXT = {
   TOGGLE_DARK: "🌙 Dark",
   TOGGLE_LIGHT: "☀️ Light",
   LOADING_PRODUCTS: "Loading products...",
-  ONLINE: " Online",
-  OFFLINE: " Offline",
+  ONLINE: "Online",
+  OFFLINE: "Offline",
 };
 
 const store = createStore();
 const circuitBreaker = new CircuitBreaker();
+
+/* ============================
+   App Component
+============================ */
 
 function App() {
   const products = useStore(store, selectors.selectSortedProducts);
@@ -56,6 +65,10 @@ function App() {
   const loading = useStore(store, selectors.selectLoading);
   const error = useStore(store, selectors.selectError);
   const theme = useStore(store, selectors.selectTheme);
+  const hasSearched = useStore(store, selectors.selectHasSearched);
+
+
+  const [online, setOnline] = useState(navigator.onLine);
 
   /* ============================
      Theme Effect
@@ -65,64 +78,94 @@ function App() {
   }, [theme]);
 
   /* ============================
+     Online / Offline Listener
+  ============================ */
+  useEffect(() => {
+    const updateOnline = () => setOnline(navigator.onLine);
+    window.addEventListener("online", updateOnline);
+    window.addEventListener("offline", updateOnline);
+
+    return () => {
+      window.removeEventListener("online", updateOnline);
+      window.removeEventListener("offline", updateOnline);
+    };
+  }, []);
+
+  /* ============================
      Search Handler
   ============================ */
-  const handleSearch = useCallback(async (query) => {
-    store.dispatch(actions.setLoading(true));
+const handleSearch = useCallback(async (query) => {
+  const trimmedQuery = query?.trim();
+
+  // Fresh reset state
+  if (!trimmedQuery) {
+    store.dispatch(actions.setProducts([]));
     store.dispatch(actions.setError(null));
-
-    if (!query || query.length > MAX_QUERY_LENGTH) {
-      store.dispatch(actions.setError(ERROR_MESSAGES.INVALID_QUERY));
-      store.dispatch(actions.setLoading(false));
-      return;
-    }
-
-    try {
-      const apiFn = (q) =>
-        circuitBreaker.execute(() =>
-          exponentialBackoff(() => fetchAllAPIs(q))
-        );
-
-      let products = await cacheableApiCall(query, apiFn);
-
-      products = products.map((p) => ({
-        ...p,
-        reliabilityScore: calculateReliabilityScore(p),
-      }));
-
-      products = calculatePriceDeviation(products);
-
-      store.dispatch(actions.setProducts(products));
-    } catch (err) {
-      store.dispatch(
-        actions.setError(err.message || ERROR_MESSAGES.FETCH_FAILED)
-      );
-    }
-
+    store.dispatch(actions.setHasSearched(false));
     store.dispatch(actions.setLoading(false));
-  }, []);
+    return;
+  }
+
+  if (trimmedQuery.length > MAX_QUERY_LENGTH) {
+    store.dispatch(actions.setError(ERROR_MESSAGES.INVALID_QUERY));
+    return;
+  }
+
+  store.dispatch(actions.setLoading(true));
+  store.dispatch(actions.setError(null));
+  store.dispatch(actions.setHasSearched(true));
+
+  try {
+    const apiFn = (q) =>
+      circuitBreaker.execute(() =>
+        exponentialBackoff(() => fetchAllAPIs(q))
+      );
+
+    let results = await cacheableApiCall(trimmedQuery, apiFn);
+
+    results = results.map((p) => ({
+      ...p,
+      reliabilityScore: calculateReliabilityScore(p),
+    }));
+
+    results = calculatePriceDeviation(results);
+
+    store.dispatch(actions.setProducts(results));
+  } catch (err) {
+    store.dispatch(
+      actions.setError(err.message || ERROR_MESSAGES.FETCH_FAILED)
+    );
+  } finally {
+    store.dispatch(actions.setLoading(false));
+  }
+}, []);
+
+
 
   /* ============================
      Filter Handler
   ============================ */
-  const handleFilterChange = (filter, value) => {
-    if (filter === "maxPrice" && (value < 0 || value > MAX_PRICE_LIMIT)) return;
+  const handleFilterChange = useCallback((filter, value) => {
+    if (filter === "maxPrice") {
+      if (value < 0 || value > MAX_PRICE_LIMIT) return;
+    }
 
     if (
       (filter === "inStockOnly" || filter === "fastDeliveryOnly") &&
       typeof value !== "boolean"
-    )
+    ) {
       return;
+    }
 
     store.dispatch(actions.setFilter(filter, value));
-  };
+  }, []);
 
   /* ============================
      Sort Handler
   ============================ */
-  const handleSort = (field, order) => {
+  const handleSort = useCallback((field, order) => {
     store.dispatch(actions.setSort(field, order));
-  };
+  }, []);
 
   /* ============================
      Theme Toggle
@@ -136,92 +179,71 @@ function App() {
   };
 
   /* ============================
-     Online / Offline Indicator
-  ============================ */
-  const [online, setOnline] = React.useState(navigator.onLine);
-
-  useEffect(() => {
-    const updateOnline = () => setOnline(navigator.onLine);
-
-    window.addEventListener("online", updateOnline);
-    window.addEventListener("offline", updateOnline);
-
-    return () => {
-      window.removeEventListener("online", updateOnline);
-      window.removeEventListener("offline", updateOnline);
-    };
-  }, []);
-
-  /* ============================
      Render
   ============================ */
   return (
     <ErrorBoundary>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: 16,
-        }}
-      >
-        <h1>{UI_TEXT.TITLE}</h1>
+      <div className="app">
+        {/* Header */}
+        <header className="app__header">
+          <h1 className="app__title">{UI_TEXT.TITLE}</h1>
 
-        <button
-          aria-label="Toggle dark mode"
-          onClick={toggleTheme}
-          style={{
-            background: "var(--color-primary)",
-            color: "#fff",
-            borderRadius: "var(--border-radius)",
-            padding: "8px 16px",
-            fontWeight: 600,
-          }}
-        >
-          {theme === THEMES.LIGHT
-            ? UI_TEXT.TOGGLE_DARK
-            : UI_TEXT.TOGGLE_LIGHT}
-        </button>
-      </header>
+          <button
+            className="app__theme-toggle"
+            onClick={toggleTheme}
+            aria-label="Toggle theme"
+          >
+            {theme === THEMES.LIGHT
+              ? UI_TEXT.TOGGLE_DARK
+              : UI_TEXT.TOGGLE_LIGHT}
+          </button>
+        </header>
 
-      <section style={{ padding: 16 }}>
-        <SearchBar onSearch={handleSearch} loading={loading} />
-      </section>
+        {/* Search */}
+        <section className="app__section">
+          <SearchBar onSearch={handleSearch} loading={loading} />
+        </section>
 
-      <section style={{ paddingInline: 16 }}>
-        <ControlsBar
-          filters={filters}
-          onFilterChange={handleFilterChange}
-          sort={sort}
-          onSortChange={handleSort}
-        />
-      </section>
+        {/* Controls */}
+        <section className="app__section">
+          <ControlsBar
+            filters={filters}
+            onFilterChange={handleFilterChange}
+            sort={sort}
+            onSortChange={handleSort}
+            totalResults={products.length}
+          />
+        </section>
 
-      {error && (
-        <div
-          role="alert"
-          style={{ color: "var(--color-warning)", margin: 16 }}
-        >
-          {error}
-        </div>
-      )}
+        {/* Error */}
+        {error && (
+          <div role="alert" className="app__error">
+            {error}
+          </div>
+        )}
 
-      {loading ? (
-        <LoadingSpinner message={UI_TEXT.LOADING_PRODUCTS} />
-      ) : (
-        <ComparisonGrid
-          products={products}
-          loading={loading}
-          renderProduct={(p) => (
-            <ProductCard product={p} onViewDetails={() => {}} />
-          )}
-        />
-      )}
+        {/* Grid */}
+        <section className="app__section">
+          <ComparisonGrid
+           hasSearched={hasSearched}
+            products={products}
+            loading={loading}
+            renderProduct={(p) => (
+              <ProductCard product={p} onViewDetails={() => {}} />
+            )}
+          />
+        </section>
 
-      <footer className="footer-indicator" style={{ padding: 16 }}>
-        <span className={`dot ${online ? "online" : "offline"}`}></span>
-        {online ? UI_TEXT.ONLINE : UI_TEXT.OFFLINE}
-      </footer>
+        {/* Footer Indicator */}
+        <footer className="app__footer">
+          <span
+            className={`status-dot ${
+              online ? "status-dot--online" : "status-dot--offline"
+            }`}
+          />
+          {online ? UI_TEXT.ONLINE : UI_TEXT.OFFLINE}
+        </footer>
+      </div>
     </ErrorBoundary>
   );
 }

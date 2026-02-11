@@ -9,7 +9,7 @@
 ## Input Validation
 
 - Search input: max 500 chars
-- Filter values: price 0-10000, booleans only
+- Filter values: price 0-5000, booleans only
 - API response schema validated
 
 ## API Key Safety

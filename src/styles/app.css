@@ -41,6 +41,7 @@ input, select, button {
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
+
 input:focus, select:focus, button:focus {
   border-color: var(--color-success);
   box-shadow: 0 0 0 2px var(--color-success);
@@ -105,11 +106,13 @@ main[aria-label="Product comparison grid"] {
   }
 }
 
-/* Accessibility: focus indicators */
-:focus-visible {
-  outline: 2px solid var(--color-success);
-  outline-offset: 2px;
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
+
+
 
 /* Prefer reduced motion */
 @media (prefers-reduced-motion: reduce) {
@@ -177,4 +180,78 @@ body, input, select, button {
   to {
     transform: rotate(360deg);
   }
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-bottom: 0px;
+    background: var(--color-bg);
+}
+
+.app__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+}
+
+.app__title {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.app__theme-toggle {
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 8px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.app__theme-toggle:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.app__section {
+  padding: 0 16px;
+}
+
+.app__error {
+  color: var(--color-warning);
+  padding: 0 16px;
+  font-weight: 500;
+}
+
+.app__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.status-dot--online {
+  background-color: #22c55e;
+}
+
+.status-dot--offline {
+  background-color: #ef4444;
 }

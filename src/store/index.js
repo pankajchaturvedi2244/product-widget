@@ -66,6 +66,12 @@ export const actions = {
   setTheme: (theme) => ({ type: "SET_THEME", payload: theme }),
   setLoading: (loading) => ({ type: "SET_LOADING", payload: loading }),
   setError: (error) => ({ type: "SET_ERROR", payload: error }),
+  resetSort: () => ({ type: "RESET_SORT" }),
+  setHasSearched: (hasSearched) => ({
+    type: "SET_HAS_SEARCHED",
+    payload: hasSearched,
+  }),
+  resetFilters: () => ({ type: "RESET_FILTERS" }),
 };
 
 // Selectors
@@ -95,10 +101,13 @@ export const selectors = {
   selectError: (state) => state.error,
   selectFilters: (state) => state.filters,
   selectSort: (state) => state.sort,
+
+  selectHasSearched: (state) => state.hasSearched,
 };
 
 // Reducer
 export function reducer(state, action) {
+  console.log("Action dispatched:", action);
   switch (action.type) {
     case "SET_PRODUCTS":
       return { ...state, products: action.payload };
@@ -115,6 +124,23 @@ export function reducer(state, action) {
         ...state,
         sort: { field: action.payload.field, order: action.payload.order },
       };
+    case "RESET_SORT":
+      return {
+        ...state,
+        sort: { field: "price", order: "asc" },
+      };
+    case "RESET_FILTERS":
+      return {
+        ...state,
+        filters: {
+          inStockOnly: false,
+          fastDeliveryOnly: false,
+          maxPrice: 5000,
+        },
+      };
+    case "SET_HAS_SEARCHED":
+      return { ...state, hasSearched: action.payload };
+
     case "SET_THEME":
       return { ...state, theme: action.payload };
     case "SET_LOADING":
@@ -132,12 +158,13 @@ export const initialState = {
   filters: {
     inStockOnly: false,
     fastDeliveryOnly: false,
-    maxPrice: 10000,
+    maxPrice: 5000,
   },
   sort: {
     field: "price",
     order: "asc",
   },
+  hasSearched: false,
   theme: "light",
   loading: false,
   error: null,
