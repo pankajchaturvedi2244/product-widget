@@ -107,7 +107,6 @@ export const selectors = {
 
 // Reducer
 export function reducer(state, action) {
-  console.log("Action dispatched:", action);
   switch (action.type) {
     case "SET_PRODUCTS":
       return { ...state, products: action.payload };
