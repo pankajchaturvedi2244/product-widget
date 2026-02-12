@@ -85,7 +85,7 @@ npm publish  # After updating package.json
 
 ```html
 <div id="marketplace-widget"></div>
-<script src="https://cdn.example.com/embed.js"></script>
+<script src="https://product-widget-comparision-pankaj.vercel.app/embed.js"></script>
 ```
 
 ## Performance
