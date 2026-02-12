@@ -1,40 +1,31 @@
 // src/App.jsx
-import React, { useEffect, useCallback, useState } from "react";
-import {
-  createStore,
-  actions,
-  selectors,
-  useStore,
-} from "./store/index.js";
-import {
-  fetchAllAPIs,
-  calculateReliabilityScore,
-  calculatePriceDeviation,
-} from "./services/api.js";
-import { cacheableApiCall } from "./services/cache.js";
-import { exponentialBackoff, CircuitBreaker } from "./utils/resilience.js";
+import React, { useCallback } from "react";
+
+import { createStore, actions } from "./store";
+import { useAppState } from "./hooks/useAppState";
+import { useOnlineStatus } from "./hooks/useOnlineStatus";
+import { useTheme } from "./hooks/useTheme";
+import { useProductSearch } from "./hooks/useProductSearch";
 
 import {
   SearchBar,
-  
   ComparisonGrid,
-  
-} from "./components/index.jsx";
-import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
-
-import { ProductCard } from "./components/ProductCard.jsx";
+  ProductCard,
+  ControlsBar,
+  ErrorBoundary,
+} from "./components";
 
 import "./styles/app.css";
-import { MAX_QUERY_LENGTH, MAX_PRICE_LIMIT } from "./configs/appConfig.js";
-import { ControlsBar } from "./components/ControlsBar.jsx";
 
-/* ============================
-   Constants
-============================ */
 
-const ERROR_MESSAGES = {
-  INVALID_QUERY: "Invalid search query",
-  FETCH_FAILED: "Failed to fetch products",
+const store = createStore();
+
+const UI_TEXT = {
+  TITLE: "Marketplace Comparison Widget",
+  TOGGLE_DARK: "🌙 Dark",
+  TOGGLE_LIGHT: "☀️ Light",
+  ONLINE: "Online",
+  OFFLINE: "Offline",
 };
 
 const THEMES = {
@@ -42,145 +33,58 @@ const THEMES = {
   DARK: "dark",
 };
 
-const UI_TEXT = {
-  TITLE: "Marketplace Comparison Widget",
-  TOGGLE_DARK: "🌙 Dark",
-  TOGGLE_LIGHT: "☀️ Light",
-  LOADING_PRODUCTS: "Loading products...",
-  ONLINE: "Online",
-  OFFLINE: "Offline",
-};
-
-const store = createStore();
-const circuitBreaker = new CircuitBreaker();
-
-/* ============================
-   App Component
-============================ */
-
 function App() {
-  const products = useStore(store, selectors.selectSortedProducts);
-  const filters = useStore(store, selectors.selectFilters);
-  const sort = useStore(store, selectors.selectSort);
-  const loading = useStore(store, selectors.selectLoading);
-  const error = useStore(store, selectors.selectError);
-  const theme = useStore(store, selectors.selectTheme);
-  const hasSearched = useStore(store, selectors.selectHasSearched);
+  /* -----------------------------
+     Global State (Centralized)
+  ------------------------------ */
+  const {
+    products,
+    filters,
+    sort,
+    loading,
+    error,
+    theme,
+    hasSearched,
+  } = useAppState(store);
 
+  /* -----------------------------
+     Hooks (Isolated Concerns)
+  ------------------------------ */
+  const isOnline = useOnlineStatus();
+  const { searchProducts } = useProductSearch(store);
 
-  const [online, setOnline] = useState(navigator.onLine);
+  useTheme(theme);
 
-  /* ============================
-     Theme Effect
-  ============================ */
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-  }, [theme]);
+  /* -----------------------------
+     Event Handlers (Pure Wiring)
+  ------------------------------ */
 
-  /* ============================
-     Online / Offline Listener
-  ============================ */
-  useEffect(() => {
-    const updateOnline = () => setOnline(navigator.onLine);
-    window.addEventListener("online", updateOnline);
-    window.addEventListener("offline", updateOnline);
+  const handleFilterChange = useCallback(
+    (filter, value) => {
+      store.dispatch(actions.setFilter(filter, value));
+    },
+    []
+  );
 
-    return () => {
-      window.removeEventListener("online", updateOnline);
-      window.removeEventListener("offline", updateOnline);
-    };
-  }, []);
+  const handleSortChange = useCallback(
+    (field, order) => {
+      store.dispatch(actions.setSort(field, order));
+    },
+    []
+  );
 
-  /* ============================
-     Search Handler
-  ============================ */
-const handleSearch = useCallback(async (query) => {
-  const trimmedQuery = query?.trim();
-
-  // Fresh reset state
-  if (!trimmedQuery) {
-    store.dispatch(actions.setProducts([]));
-    store.dispatch(actions.setError(null));
-    store.dispatch(actions.setHasSearched(false));
-    store.dispatch(actions.setLoading(false));
-    return;
-  }
-
-  if (trimmedQuery.length > MAX_QUERY_LENGTH) {
-    store.dispatch(actions.setError(ERROR_MESSAGES.INVALID_QUERY));
-    return;
-  }
-
-  store.dispatch(actions.setLoading(true));
-  store.dispatch(actions.setError(null));
-  store.dispatch(actions.setHasSearched(true));
-
-  try {
-    const apiFn = (q) =>
-      circuitBreaker.execute(() =>
-        exponentialBackoff(() => fetchAllAPIs(q))
-      );
-
-    let results = await cacheableApiCall(trimmedQuery, apiFn);
-
-    results = results.map((p) => ({
-      ...p,
-      reliabilityScore: calculateReliabilityScore(p),
-    }));
-
-    results = calculatePriceDeviation(results);
-
-    store.dispatch(actions.setProducts(results));
-  } catch (err) {
-    store.dispatch(
-      actions.setError(err.message || ERROR_MESSAGES.FETCH_FAILED)
-    );
-  } finally {
-    store.dispatch(actions.setLoading(false));
-  }
-}, []);
-
-
-
-  /* ============================
-     Filter Handler
-  ============================ */
-  const handleFilterChange = useCallback((filter, value) => {
-    if (filter === "maxPrice") {
-      if (value < 0 || value > MAX_PRICE_LIMIT) return;
-    }
-
-    if (
-      (filter === "inStockOnly" || filter === "fastDeliveryOnly") &&
-      typeof value !== "boolean"
-    ) {
-      return;
-    }
-
-    store.dispatch(actions.setFilter(filter, value));
-  }, []);
-
-  /* ============================
-     Sort Handler
-  ============================ */
-  const handleSort = useCallback((field, order) => {
-    store.dispatch(actions.setSort(field, order));
-  }, []);
-
-  /* ============================
-     Theme Toggle
-  ============================ */
-  const toggleTheme = () => {
+  const toggleTheme = useCallback(() => {
     store.dispatch(
       actions.setTheme(
         theme === THEMES.LIGHT ? THEMES.DARK : THEMES.LIGHT
       )
     );
-  };
+  }, [theme]);
 
-  /* ============================
+  /* -----------------------------
      Render
-  ============================ */
+  ------------------------------ */
+
   return (
     <ErrorBoundary>
       <div className="app">
@@ -201,16 +105,16 @@ const handleSearch = useCallback(async (query) => {
 
         {/* Search */}
         <section className="app__section">
-          <SearchBar onSearch={handleSearch} loading={loading} />
+          <SearchBar onSearch={searchProducts} loading={loading} />
         </section>
 
         {/* Controls */}
         <section className="app__section">
           <ControlsBar
             filters={filters}
-            onFilterChange={handleFilterChange}
             sort={sort}
-            onSortChange={handleSort}
+            onFilterChange={handleFilterChange}
+            onSortChange={handleSortChange}
             totalResults={products.length}
           />
         </section>
@@ -225,23 +129,29 @@ const handleSearch = useCallback(async (query) => {
         {/* Grid */}
         <section className="app__section">
           <ComparisonGrid
-           hasSearched={hasSearched}
+            hasSearched={hasSearched}
             products={products}
             loading={loading}
             renderProduct={(p) => (
-              <ProductCard product={p} onViewDetails={() => {}} />
+              <ProductCard
+                key={p.id}
+                product={p}
+                onViewDetails={() => {}}
+              />
             )}
           />
         </section>
 
-        {/* Footer Indicator */}
+        {/* Footer Network Status */}
         <footer className="app__footer">
           <span
             className={`status-dot ${
-              online ? "status-dot--online" : "status-dot--offline"
+              isOnline
+                ? "status-dot--online"
+                : "status-dot--offline"
             }`}
           />
-          {online ? UI_TEXT.ONLINE : UI_TEXT.OFFLINE}
+          {isOnline ? UI_TEXT.ONLINE : UI_TEXT.OFFLINE}
         </footer>
       </div>
     </ErrorBoundary>
